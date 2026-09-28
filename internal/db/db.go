@@ -546,7 +546,9 @@ CREATE INDEX IF NOT EXISTS idx_provider_freshness_updated_at
 // live Cursor IDE row to the new hash; until then the watcher parses the
 // whole container. Trashed rows keep their old hash and are vouched as
 // suppressed.)
-const dataVersion = 121
+// (122: OpenCode dispatch timestamps are retained as tool-execution events so
+// unchanged sessions gain dispatch-to-completion timing.)
+const dataVersion = 122
 
 const tokenCoverageRepairStatsKey = "token_coverage_repair_v1"
 
