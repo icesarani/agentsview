@@ -486,8 +486,10 @@ func (c *sessionToolSequenceCollector) messageTimingEligibility(message *db.Mess
 	collect := func(calls []sessionToolSequenceCall) {
 		for i := range calls {
 			call := &calls[i]
-			if call.Ordinal == message.Ordinal && call.ToolUseID != "" {
-				candidates[call.ToolUseID] = 0
+			if call.Ordinal == message.Ordinal {
+				if call.ToolUseID != "" {
+					candidates[call.ToolUseID] = 0
+				}
 				selected = append(selected, call)
 			}
 		}
@@ -496,7 +498,7 @@ func (c *sessionToolSequenceCollector) messageTimingEligibility(message *db.Mess
 	for i := range c.response.Sequences {
 		collect(c.response.Sequences[i].Calls)
 	}
-	if len(candidates) == 0 {
+	if len(selected) == 0 {
 		return
 	}
 	for _, call := range message.ToolCalls {
@@ -505,7 +507,7 @@ func (c *sessionToolSequenceCollector) messageTimingEligibility(message *db.Mess
 		}
 	}
 	for _, call := range selected {
-		call.timingEligible = candidates[call.ToolUseID] == 1
+		call.timingEligible = call.ToolUseID == "" || candidates[call.ToolUseID] == 1
 	}
 }
 
