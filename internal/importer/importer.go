@@ -97,17 +97,19 @@ func (f *lazyFTS) restore(ctx context.Context) error {
 	return nil
 }
 
-// ImportClaudeAI reads a Claude.ai conversations.json export
+// ImportClaudeAIWithOptions reads a Claude.ai conversations.json export
 // and upserts each conversation into the store. Existing
 // sessions are updated (messages replaced) unless the export
-// has fewer messages than the archive, which is refused.
+// has fewer messages than the archive, which is refused unless
+// opts lists the session for replacement (see ImportOptions).
 // User-renamed display names are preserved. Excluded (deleted)
 // sessions are counted as skipped.
-func ImportClaudeAI(
+func ImportClaudeAIWithOptions(
 	ctx context.Context,
 	store db.Store,
 	r io.Reader,
 	cb *ImportCallbacks,
+	opts ImportOptions,
 	machine ...string,
 ) (stats ImportStats, retErr error) {
 	fts := newLazyFTS(ctx, store, cb.indexing)
@@ -138,8 +140,8 @@ func ImportClaudeAI(
 		result.Session.Machine = resolvedImportMachine(
 			result.Session.Machine, machine,
 		)
-		status, err := upsertConversation(
-			ctx, store, result, fts,
+		status, err := importClaudeAIConversation(
+			ctx, store, result, fts, opts,
 		)
 		if err != nil {
 			stats.Errors++
@@ -184,17 +186,7 @@ func upsertConversation(
 ) (importStatus, error) {
 	s := result.Session
 
-	msgs := make([]db.Message, len(result.Messages))
-	for i, m := range result.Messages {
-		msgs[i] = db.Message{
-			SessionID:     s.ID,
-			Ordinal:       m.Ordinal,
-			Role:          string(m.Role),
-			Content:       m.Content,
-			Timestamp:     m.Timestamp.UTC().Format(time.RFC3339Nano),
-			ContentLength: m.ContentLength,
-		}
-	}
+	msgs := claudeAIMessages(s.ID, result.Messages)
 
 	existing, err := store.GetSession(ctx, s.ID)
 	if err != nil {
@@ -205,10 +197,10 @@ func upsertConversation(
 	// turns) would make the replacement below drop stored messages.
 	// Refuse it before touching the session row.
 	if existing != nil && len(msgs) < existing.MessageCount {
-		return importNew, fmt.Errorf(
+		return importNew, refuseHistory(fmt.Errorf(
 			"export has %d messages, archive has %d",
 			len(msgs), existing.MessageCount,
-		)
+		))
 	}
 
 	sess := db.Session{
@@ -294,17 +286,19 @@ func (a *assetResolverAdapter) Copy(
 	return assets.CopyAsset(srcPath, a.assetsDir)
 }
 
-// ImportChatGPT reads a ChatGPT export directory (containing
+// ImportChatGPTWithOptions reads a ChatGPT export directory (containing
 // conversations-*.json files) and imports each conversation into
 // the store. Existing sessions are extended when the export contains
 // their archived messages followed by new ones; see
-// upsertChatGPTConversation.
-func ImportChatGPT(
+// upsertChatGPTConversation. Sessions opts lists may be replaced when
+// that import refuses them (see ImportOptions).
+func ImportChatGPTWithOptions(
 	ctx context.Context,
 	store db.Store,
 	dir string,
 	assetsDir string,
 	cb *ImportCallbacks,
+	opts ImportOptions,
 	machine ...string,
 ) (stats ImportStats, retErr error) {
 	fts := newLazyFTS(ctx, store, cb.indexing)
@@ -340,8 +334,8 @@ func ImportChatGPT(
 			result.Session.Machine = resolvedImportMachine(
 				result.Session.Machine, machine,
 			)
-			status, err := upsertChatGPTConversation(
-				ctx, store, result, fts,
+			status, err := importChatGPTConversation(
+				ctx, store, result, fts, opts,
 			)
 			if err != nil {
 				stats.Errors++
@@ -422,21 +416,21 @@ func upsertChatGPTConversation(
 	// can differ from an unchanged archived copy.
 	canonical := canonicalChatGPTMessages(store, chatGPTSession(s), msgs, policy)
 	if len(canonical) < len(archived) {
-		return importNew, fmt.Errorf(
+		return importNew, refuseHistory(fmt.Errorf(
 			"export has %d messages, archive has %d",
 			len(canonical), len(archived),
-		)
+		))
 	}
 	if len(canonical) != len(msgs) {
-		return importNew, errors.New(
+		return importNew, refuseHistory(errors.New(
 			"export history diverges from the archived messages",
-		)
+		))
 	}
 	filled, ok := compareChatGPTPrefix(archived, canonical[:len(archived)])
 	if !ok {
-		return importNew, errors.New(
+		return importNew, refuseHistory(errors.New(
 			"export history diverges from the archived messages",
-		)
+		))
 	}
 
 	if len(msgs) == len(archived) && len(filled) == 0 {
