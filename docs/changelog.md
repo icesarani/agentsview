@@ -14,6 +14,9 @@ The latest published release is
 - The web UI reports an anonymous `app_opened` event through the server when it
   loads and on the first focus of each later UTC day.
   `AGENTSVIEW_TELEMETRY_ENABLED=0` turns it off with the daemon ping.
+- The web UI reports anonymous search, session-view, export, insight and
+  analytics-page events through the server, each with one value from a fixed
+  list. `AGENTSVIEW_TELEMETRY_ENABLED=0` turns them off.
 - Sessions show the title their agent keeps for them, and a name you chose with
   `/rename` or the agent's equivalent wins over a generated title. Current
   Claude Code `/rename` names now appear, and Qwen Code, Gemini CLI, Kimi CLI,
